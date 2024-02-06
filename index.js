@@ -1,6 +1,11 @@
 
 let zones;
 
+/**
+ * Gets map of split touches.
+ * @param {TouchList} touches List of touches to split by zones
+ * @returns Map of split touches by zone keys. -1 for regular document.
+ */
 function splitTouches(touches) {
     const result = {}
     result[-1] = [];

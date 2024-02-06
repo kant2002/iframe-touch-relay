@@ -1,0 +1,11 @@
+{
+  "name": "iframe-touch-relay",
+  "version": "0.0.1",
+  "description": "Relays touch events inside iframe, to support multi-touch on pages with multiple iframes",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "author": "",
+  "license": "ISC"
+}
