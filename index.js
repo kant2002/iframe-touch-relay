@@ -122,7 +122,7 @@ export function attachRelayToPage(my_zones) {
   box.style.width = "100%";
   box.style.height = "100%";
   box.style.zIndex = "1000";
-  document.body.insertBefore(box);
+  document.body.insertBefore(box, document.body.children[0]);
   box.addEventListener("touchstart", handleStart, false);
   box.addEventListener("touchend", handleEnd, false);
   box.addEventListener("touchcancel", handleCancel, false);
