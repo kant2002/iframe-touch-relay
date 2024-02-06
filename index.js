@@ -111,16 +111,34 @@ export function attachTouchRelay() {
     window.addEventListener("message", relayTouchMessage, false);
 }
 
+export function detachTouchRelay() {
+    window.removeEventListener("message", relayTouchMessage, false);
+}
+
+let overlay;
 export function attachRelayToPage(my_zones) {
   const box = document.createElement("div");
   box.style.position = "fixed";
   box.style.width = "100%";
   box.style.height = "100%";
   box.style.zIndex = "1000";
-  document.body.insertBefore(box)
+  document.body.insertBefore(box);
   box.addEventListener("touchstart", handleStart, false);
   box.addEventListener("touchend", handleEnd, false);
   box.addEventListener("touchcancel", handleCancel, false);
   box.addEventListener("touchmove", handleMove, false);
   zones = my_zones;
+  overlay = box;
+}
+
+export function detachRelayToPage() {
+    if (!overlay) {
+        return;
+    }
+
+    overlay.removeEventListener("touchstart", handleStart, false);
+    overlay.removeEventListener("touchend", handleEnd, false);
+    overlay.removeEventListener("touchcancel", handleCancel, false);
+    overlay.removeEventListener("touchmove", handleMove, false);
+    overlay.remove();
 }
