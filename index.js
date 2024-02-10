@@ -14,10 +14,11 @@ function splitTouches(touches) {
     }
     for (const touch of touches) {
         let processed = false;
-        for (const zoneNdx in zones) {
+        for (let zoneNdx = 0; zoneNdx < zones.length; zoneNdx++) {
             const zone = zones[zoneNdx];
-            if (touch.clientX > zone.offsetLeft && touch.clientX < zone.offsetLeft + zone.offsetWidth
-                && touch.clientY > zone.offsetTop && touch.clientY < zone.offsetTop + zone.offsetHeight) {
+            const boundary = zone.getBoundingClientRect();
+            if (touch.clientX > boundary.left && touch.clientX < boundary.right
+                && touch.clientY > boundary.top && touch.clientY < boundary.bottom) {
                 processed = true;
                 result[zoneNdx] = result[zoneNdx].concat([touch]);
             }
@@ -30,6 +31,18 @@ function splitTouches(touches) {
     return result;
 }
 
+function decodeCoordinates(element, clientX, clientY) {
+    const boundary = element.getBoundingClientRect();
+    const clientX = t.clientX - boundary.left;
+    const clientY = t.clientY - boundary.top;
+    return { clientX, clientY };
+}
+
+/**
+ * Dispatches evens to the corresponing element.
+ * @param {string} eventName Name of the event to dispatch.
+ * @param {*} touchesMap Map of the touches to zone codes. -1 is the unmapped touches. 
+ */
 function dispatchTouches(eventName, touchesMap) {
     for (const key in touchesMap) {
         const element = key == -1 ? document : zones[key];
@@ -47,9 +60,10 @@ function dispatchTouches(eventName, touchesMap) {
                 const fakeTouch = {
                         eventName,
                         touches: touches.map(t => {
+                            const { clientX, clientY } = decodeCoordinates(element, t.clientX, t.clientY);
                             return {
-                                clientX: t.clientX - element.offsetLeft, 
-                                clientY: t.clientY - element.offsetTop,
+                                clientX, 
+                                clientY,
                                 identifier: t.identifier};
                         }),
                     };
@@ -87,11 +101,13 @@ function relayTouchMessage(evt) {
         eventName == "touchcancel"
     ) {
         const dehidratedTouches = touches.map((t) => {
-            const target = document.elementFromPoint(t.clientX, t.clientY);
+            const target = document.elementFromPoint(t.clientX, t.clientY) || document.body;
+            const elementRelativeX = t.clientX;
+            const elementRelativeY = t.clientY;
             return new Touch({
                 identifier: t.identifier,
-                clientX: t.clientX,
-                clientY: t.clientY,
+                clientX: elementRelativeX,
+                clientY: elementRelativeY,
                 target,
             });
         });
