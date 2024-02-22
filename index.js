@@ -31,10 +31,17 @@ function splitTouches(touches) {
     return result;
 }
 
-function decodeCoordinates(element, clientX, clientY) {
+function decodeCoordinates(element, x, y) {
     const boundary = element.getBoundingClientRect();
-    const clientX = t.clientX - boundary.left;
-    const clientY = t.clientY - boundary.top;
+    const clientX = x - boundary.left;
+    const clientY = y - boundary.top;
+    const style = window.getComputedStyle(element.offsetParent, null);
+    const transform = new DOMMatrix(style.getPropertyValue("transform"));
+    const pointCoordinates = new DOMPoint(clientX, clientY);
+    const transformedPoint = pointCoordinates.matrixTransform(transform.inverse())
+    if (debug) {
+        console.log(transformedPoint);
+    }
     return { clientX, clientY };
 }
 
@@ -92,6 +99,51 @@ function handleCancel(e) {
     dispatchTouches("touchcancel", splitTouches(e.changedTouches));
 }
 
+const pointSize = 30;
+function colorForTouch(touch) {
+    var color = "#000000";
+    switch (touch.identifier) {
+        case 0:
+            color = "#ff0000";
+            break;
+        case 1:
+            color = "#ff00ff";
+            break;
+        case 2:
+            color = "#0000ff";
+            break;
+        case 3:
+            color = "#00ffff";
+            break;
+        case 4:
+            color = "#00ff00";
+            break;
+        case 5:
+            color = "#ffff00";
+            break;
+        case 6:
+            color = "#ffa800";
+            break;
+        case 7:
+            color = "#ffa8ff";
+            break;
+        case 8:
+            color = "#00a8ff";
+            break;
+        case 9:
+            color = "#a8ffff";
+            break;
+        case 10:
+            color = "#a800ff";
+            break;
+        default:
+            color = "#000000";
+    }
+    return color;
+}
+
+let debug = true;
+
 function relayTouchMessage(evt) {
     const { eventName, touches } = evt.data;
     if (
@@ -104,6 +156,24 @@ function relayTouchMessage(evt) {
             const target = document.elementFromPoint(t.clientX, t.clientY) || document.body;
             const elementRelativeX = t.clientX;
             const elementRelativeY = t.clientY;
+            if (debug) {
+                const point = document.createElement("div");
+                point.className = "point";
+                point.id = "touch-" + t.identifier;
+                point.style.left = elementRelativeX - pointSize / 2 + "px";
+                point.style.top = elementRelativeY - pointSize / 2 + "px";
+                point.style.width = "30px";
+                point.style.height = "30px";
+                point.style.position = "fixed";
+                point.style.backgroundColor = colorForTouch(t);
+                point.style.borderRadius = "50%";
+                point.style.outline =
+                    pointSize / 1.2 + "px solid red 40";
+                document.body.appendChild(point);
+                setTimeout(() => {
+                    document.body.removeChild(point);
+                }, 1000);
+            }
             return new Touch({
                 identifier: t.identifier,
                 clientX: elementRelativeX,
@@ -123,7 +193,8 @@ function relayTouchMessage(evt) {
     }
 }
 
-export function attachTouchRelay() {
+export function attachTouchRelay(options) {
+    debug = options.debug || false;
     window.addEventListener("message", relayTouchMessage, false);
 }
 
