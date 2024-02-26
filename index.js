@@ -35,15 +35,10 @@ function decodeCoordinates(element, x, y) {
     const boundary = element.getBoundingClientRect();
     const clientX = x - boundary.left;
     const clientY = y - boundary.top;
-    const style = window.getComputedStyle(element.offsetParent, null);
-    const transform = new DOMMatrix(style.getPropertyValue("transform"));
-    const pointCoordinates = new DOMPoint(clientX, clientY);
-    const transformedPoint = pointCoordinates.matrixTransform(transform.inverse())
-    if (debug) {
-        console.log(transformedPoint);
-    }
     return { clientX, clientY };
 }
+
+let decodeCoordinatesWorker;
 
 /**
  * Dispatches evens to the corresponing element.
@@ -67,7 +62,7 @@ function dispatchTouches(eventName, touchesMap) {
                 const fakeTouch = {
                         eventName,
                         touches: touches.map(t => {
-                            const { clientX, clientY } = decodeCoordinates(element, t.clientX, t.clientY);
+                            const { clientX, clientY } = decodeCoordinatesWorker(element, t.clientX, t.clientY);
                             return {
                                 clientX, 
                                 clientY,
@@ -195,6 +190,7 @@ function relayTouchMessage(evt) {
 
 export function attachTouchRelay(options) {
     debug = options.debug || false;
+    decodeCoordinatesWorker = options.decodeCoordinates || decodeCoordinates;
     window.addEventListener("message", relayTouchMessage, false);
 }
 
