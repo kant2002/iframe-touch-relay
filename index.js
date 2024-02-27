@@ -189,6 +189,7 @@ function relayTouchMessage(evt) {
 }
 
 export function attachTouchRelay(options) {
+    options = options || {};
     debug = options.debug || false;
     decodeCoordinatesWorker = options.decodeCoordinates || decodeCoordinates;
     window.addEventListener("message", relayTouchMessage, false);
@@ -199,19 +200,22 @@ export function detachTouchRelay() {
 }
 
 let overlay;
-export function attachRelayToPage(my_zones) {
-  const box = document.createElement("div");
-  box.style.position = "fixed";
-  box.style.width = "100%";
-  box.style.height = "100%";
-  box.style.zIndex = "1000";
-  document.body.insertBefore(box, document.body.children[0]);
-  box.addEventListener("touchstart", handleStart, false);
-  box.addEventListener("touchend", handleEnd, false);
-  box.addEventListener("touchcancel", handleCancel, false);
-  box.addEventListener("touchmove", handleMove, false);
-  zones = my_zones;
-  overlay = box;
+export function attachRelayToPage(my_zones, options) {
+    options = options || {};
+    debug = options.debug || false;
+    decodeCoordinatesWorker = options.decodeCoordinates || decodeCoordinates;
+    const box = document.createElement("div");
+    box.style.position = "fixed";
+    box.style.width = "100%";
+    box.style.height = "100%";
+    box.style.zIndex = "1000";
+    document.body.insertBefore(box, document.body.children[0]);
+    box.addEventListener("touchstart", handleStart, false);
+    box.addEventListener("touchend", handleEnd, false);
+    box.addEventListener("touchcancel", handleCancel, false);
+    box.addEventListener("touchmove", handleMove, false);
+    zones = my_zones;
+    overlay = box;
 }
 
 export function detachRelayToPage() {
