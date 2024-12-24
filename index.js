@@ -148,12 +148,13 @@ function relayTouchMessage(evt) {
         eventName == "touchcancel"
     ) {
         const dehidratedTouches = touches.map((t) => {
-            const target = document.elementFromPoint(t.clientX, t.clientY) || document.body;
+            const targetCandidates = document.elementsFromPoint(t.clientX, t.clientY);
+            const target = targetCandidates.filter(item => !item.classList.contains("debug-iframe-relay-point"))[0];
             const elementRelativeX = t.clientX;
             const elementRelativeY = t.clientY;
             if (debug) {
                 const point = document.createElement("div");
-                point.className = "point";
+                point.className = "debug-iframe-relay-point point";
                 point.id = "touch-" + t.identifier;
                 point.style.left = elementRelativeX - pointSize / 2 + "px";
                 point.style.top = elementRelativeY - pointSize / 2 + "px";
