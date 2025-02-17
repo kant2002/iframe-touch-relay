@@ -31,6 +31,34 @@ function splitTouches(touches) {
     return result;
 }
 
+/**
+ * Gets map of split touches.
+ * @param {MouseEvent} touches List of touches to split by zones
+ * @returns Map of split touches by zone keys. -1 for regular document.
+ */
+function splitClick(touch) {
+    const result = {}
+    result[-1] = [];
+    for (const zoneNdx in zones) {
+        result[zoneNdx] = [];
+    }
+    let processed = false;
+    for (let zoneNdx = 0; zoneNdx < zones.length; zoneNdx++) {
+        const zone = zones[zoneNdx];
+        const boundary = zone.getBoundingClientRect();
+        if (touch.clientX > boundary.left && touch.clientX < boundary.right
+            && touch.clientY > boundary.top && touch.clientY < boundary.bottom) {
+            processed = true;
+            result[zoneNdx] = result[zoneNdx].concat([touch]);
+        }
+    }
+    if (!processed) {
+        result[-1] = result[-1].concat([touch]);
+    }
+
+    return result;
+}
+
 function decodeCoordinates(element, x, y) {
     const boundary = element.getBoundingClientRect();
     const clientX = x - boundary.left;
@@ -75,6 +103,36 @@ function dispatchTouches(eventName, touchesMap) {
     }
 }
 
+/**
+ * Dispatches evens to the corresponing element.
+ * @param {string} eventName Name of the event to dispatch.
+ * @param {*} clickMap Map of the clicks to zone codes. -1 is the unmapped clicks. 
+ */
+function dispatchClick(eventName, clickMap) {
+    for (const key in touchesMap) {
+        const element = key == -1 ? document : zones[key];
+        const touches = clickMap[key];
+        const touchEvent = new MouseEvent(eventName, {
+            clientX: touches.clientX,
+            clientY: touches.clientY,
+            view: window,
+            cancelable: true,
+            bubbles: true,
+        });
+        if (key == -1)
+            document.dispatchEvent(touchEvent);
+        else {
+            const { clientX, clientY } = decodeCoordinatesWorker(element, touches.clientX, touches.clientY);
+            const fakeTouch = {
+                    eventName,
+                    clientX, 
+                    clientY,
+                };
+            element.contentWindow.postMessage(fakeTouch, "*");
+        }
+    }
+}
+
 function handleStart(e) {
     var touches = e.changedTouches;
     dispatchTouches("touchstart", splitTouches(e.changedTouches));
@@ -92,6 +150,16 @@ function handleEnd(e) {
 function handleCancel(e) {
     handleEnd(e);
     dispatchTouches("touchcancel", splitTouches(e.changedTouches));
+}
+
+/**
+ * Handle click event
+ * @param {MouseEvent} e Information about mouse click
+ */
+function handleClick(e) {
+    var touches = e.changedTouches;
+    dispatchClick("click", splitClick(e));
+    e.preventDefault();
 }
 
 const pointSize = 30;
@@ -140,13 +208,14 @@ function colorForTouch(touch) {
 let debug = true;
 
 function relayTouchMessage(evt) {
-    const { eventName, touches } = evt.data;
+    const { eventName } = evt.data;
     if (
         eventName == "touchend" ||
         eventName == "touchstart" ||
         eventName == "touchmove" ||
         eventName == "touchcancel"
     ) {
+        const { touches } = evt.data;
         const dehidratedTouches = touches.map((t) => {
             const targetCandidates = document.elementsFromPoint(t.clientX, t.clientY);
             const target = targetCandidates.filter(item => !item.classList.contains("debug-iframe-relay-point"))[0];
@@ -187,6 +256,23 @@ function relayTouchMessage(evt) {
         const eventTarget = dehidratedTouches[0].target;
         eventTarget.dispatchEvent(touchEvent);
     }
+
+    if (eventName == "click") {
+        const { clientX, clientY } = evt.data;
+        const targetCandidates = document.elementsFromPoint(clientX, clientY);
+        const eventTarget = targetCandidates.filter(item => !item.classList.contains("debug-iframe-relay-point"))[0];
+        const elementRelativeX = t.clientX;
+        const elementRelativeY = t.clientY;
+        const touchEvent = new MouseEvent(eventName, {
+            clientX: elementRelativeX,
+            clientY: elementRelativeY,
+            changedTouches: dehidratedTouches,
+            view: window,
+            cancelable: true,
+            bubbles: true,
+        });
+        eventTarget.dispatchEvent(touchEvent);
+    }
 }
 
 export function attachTouchRelay(options) {
@@ -205,7 +291,13 @@ export function attachRelayToPage(my_zones, options) {
     options = options || {};
     debug = options.debug || false;
     decodeCoordinatesWorker = options.decodeCoordinates || decodeCoordinates;
+    if (document.getElementById("iframe-relay-touches-overlay")) {
+        // The overlay was already attached, not need to do that second time.
+        return;
+    }
+
     const box = document.createElement("div");
+    box.id = "iframe-relay-touches-overlay"
     box.style.position = "fixed";
     box.style.width = "100%";
     box.style.height = "100%";
@@ -215,6 +307,7 @@ export function attachRelayToPage(my_zones, options) {
     box.addEventListener("touchend", handleEnd, false);
     box.addEventListener("touchcancel", handleCancel, false);
     box.addEventListener("touchmove", handleMove, false);
+    box.addEventListener("click", handleClick, false);
     zones = my_zones;
     overlay = box;
 }
@@ -228,5 +321,6 @@ export function detachRelayToPage() {
     overlay.removeEventListener("touchend", handleEnd, false);
     overlay.removeEventListener("touchcancel", handleCancel, false);
     overlay.removeEventListener("touchmove", handleMove, false);
+    overlay.removeEventListener("click", handleClick, false);
     overlay.remove();
 }
