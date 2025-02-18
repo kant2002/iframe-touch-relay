@@ -109,7 +109,7 @@ function dispatchTouches(eventName, touchesMap) {
  * @param {*} clickMap Map of the clicks to zone codes. -1 is the unmapped clicks. 
  */
 function dispatchClick(eventName, clickMap) {
-    for (const key in touchesMap) {
+    for (const key in clickMap) {
         const element = key == -1 ? document : zones[key];
         const touches = clickMap[key];
         const touchEvent = new MouseEvent(eventName, {
@@ -122,13 +122,15 @@ function dispatchClick(eventName, clickMap) {
         if (key == -1)
             document.dispatchEvent(touchEvent);
         else {
-            const { clientX, clientY } = decodeCoordinatesWorker(element, touches.clientX, touches.clientY);
-            const fakeTouch = {
+            for (const touch of touches) {
+                const { clientX, clientY } = decodeCoordinatesWorker(element, touch.clientX, touch.clientY);
+                const fakeTouch = {
                     eventName,
                     clientX, 
                     clientY,
                 };
-            element.contentWindow.postMessage(fakeTouch, "*");
+                element.contentWindow.postMessage(fakeTouch, "*");
+            }
         }
     }
 }
