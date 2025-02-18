@@ -263,12 +263,11 @@ function relayTouchMessage(evt) {
         const { clientX, clientY } = evt.data;
         const targetCandidates = document.elementsFromPoint(clientX, clientY);
         const eventTarget = targetCandidates.filter(item => !item.classList.contains("debug-iframe-relay-point"))[0];
-        const elementRelativeX = t.clientX;
-        const elementRelativeY = t.clientY;
+        const elementRelativeX = clientX;
+        const elementRelativeY = clientY;
         const touchEvent = new MouseEvent(eventName, {
             clientX: elementRelativeX,
             clientY: elementRelativeY,
-            changedTouches: dehidratedTouches,
             view: window,
             cancelable: true,
             bubbles: true,
