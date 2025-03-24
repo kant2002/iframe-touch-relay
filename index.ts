@@ -15,11 +15,21 @@ interface FakeTouch {
 
 interface FakeTouchEvent {
     eventName: "touchstart" | "touchend" | "touchmove" | "touchcancel";
+    time: number;
     touches: FakeTouch[];
 }
 
 interface FakeClickEvent {
     eventName: "click";
+    time: number;
+    clientX: number; 
+    clientY: number;
+}
+
+interface FakePointerEvent {
+    eventName: "pointerdown" | "pointerup";
+    pointerId: number;
+    time: number;
     clientX: number; 
     clientY: number;
 }
@@ -84,6 +94,34 @@ function splitClick(click: MouseEvent) {
     return result;
 }
 
+/**
+ * Gets map of split touches.
+ * @param {MouseEvent} touches List of touches to split by zones
+ * @returns Map of split touches by zone keys. -1 for regular document.
+ */
+function splitPointers(click: PointerEvent) {
+    const result : Record<number, PointerEvent[]> = {}
+    result[-1] = [];
+    for (const zoneNdx in zones) {
+        result[zoneNdx] = [];
+    }
+    let processed = false;
+    for (let zoneNdx = 0; zoneNdx < zones.length; zoneNdx++) {
+        const zone = zones[zoneNdx];
+        const boundary = zone.getBoundingClientRect();
+        if (click.clientX > boundary.left && click.clientX < boundary.right
+            && click.clientY > boundary.top && click.clientY < boundary.bottom) {
+            processed = true;
+            result[zoneNdx] = result[zoneNdx].concat([click]);
+        }
+    }
+    if (!processed) {
+        result[-1] = result[-1].concat([click]);
+    }
+
+    return result;
+}
+
 function decodeCoordinates(element: HTMLElement, x: number, y: number) {
     const boundary = element.getBoundingClientRect();
     const clientX = x - boundary.left;
@@ -98,7 +136,7 @@ let decodeCoordinatesWorker : (element: HTMLElement, x: number, y: number) => { 
  * @param {string} eventName Name of the event to dispatch.
  * @param {*} touchesMap Map of the touches to zone codes. -1 is the unmapped touches. 
  */
-function dispatchTouches(eventName: string, touchesMap: Record<number, Touch[]>) {
+function dispatchTouches(eventName: "touchstart" | "touchend" | "touchmove" | "touchcancel", touchesMap: Record<number, Touch[]>) {
     for (const key in touchesMap) {        
         const touches = touchesMap[key];
         if (touches.length) {
@@ -112,8 +150,9 @@ function dispatchTouches(eventName: string, touchesMap: Record<number, Touch[]>)
                 document.dispatchEvent(touchEvent);
 	        else {
                 const element = zones[key];
-                const fakeTouch = {
+                const fakeTouch : FakeTouchEvent = {
                     eventName,
+                    time: Date.now(),
                     touches: touches.map(t => {
                         const { clientX, clientY } = decodeCoordinatesWorker(element, t.clientX, t.clientY);
                         return {
@@ -122,6 +161,11 @@ function dispatchTouches(eventName: string, touchesMap: Record<number, Touch[]>)
                             identifier: t.identifier};
                     }),
                 };
+                if (debug) {
+                    performance.mark("send-touch-relay-message", { 
+                        detail: { zone: key, event: fakeTouch }
+                    });
+                }
                 if (!element.contentWindow) {
                     console.error("Element does not have contentWindow property. Cannot dispatch touch event.");
                     return;
@@ -138,30 +182,86 @@ function dispatchTouches(eventName: string, touchesMap: Record<number, Touch[]>)
  * @param {string} eventName Name of the event to dispatch.
  * @param {*} clickMap Map of the clicks to zone codes. -1 is the unmapped clicks. 
  */
-function dispatchClick(eventName: string, clickMap: Record<number, MouseEvent[]>) {
+function dispatchClick(eventName: "click", clickMap: Record<number, MouseEvent[]>) {
     for (const key in clickMap) {
         const touches = clickMap[key];
         if (parseInt(key) === -1) {
-            if (debug) {
-                performance.mark("send-touch-click-message-global", { 
-                    detail: { clientX: touches[0].clientX, clientY: touches[0].clientY }
+            for (const touch of touches) {
+                if (debug) {
+                    performance.mark("send-touch-click-message-global", { 
+                        detail: { clientX: touch.clientX, clientY: touch.clientY, time: Date.now() }
+                    });
+                }
+                const touchEvent = new MouseEvent(eventName, {
+                    clientX: touch.clientX,
+                    clientY: touch.clientY,
+                    view: window,
+                    cancelable: true,
+                    bubbles: true,
                 });
+                document.dispatchEvent(touchEvent);
             }
-            const touchEvent = new MouseEvent(eventName, {
-                clientX: touches[0].clientX,
-                clientY: touches[0].clientY,
-                view: window,
-                cancelable: true,
-                bubbles: true,
-            });
-            document.dispatchEvent(touchEvent);
         }
         else {
             const element = zones[key];
             for (const touch of touches) {
                 const { clientX, clientY } = decodeCoordinatesWorker(element, touch.clientX, touch.clientY);
-                const fakeTouch = {
+                const fakeTouch: FakeClickEvent = {
                     eventName,
+                    time: Date.now(),
+                    clientX, 
+                    clientY,
+                };
+                if (debug) {
+                    performance.mark("send-touch-relay-message", { 
+                        detail: { zone: key, event: fakeTouch }
+                    });
+                }
+                if (!element.contentWindow) {
+                    console.error("Element does not have contentWindow property. Cannot dispatch touch event.");
+                    return;
+                }
+
+                element.contentWindow.postMessage(fakeTouch, "*");
+            }
+        }
+    }
+}
+
+/**
+ * Dispatches evens to the corresponing element.
+ * @param {string} eventName Name of the event to dispatch.
+ * @param {*} clickMap Map of the clicks to zone codes. -1 is the unmapped clicks. 
+ */
+function dispatchPointers(eventName: "pointerdown" | "pointerup", clickMap: Record<number, PointerEvent[]>) {
+    for (const key in clickMap) {
+        const touches = clickMap[key];
+        if (parseInt(key) === -1) {
+            for (const touch of touches) {
+                if (debug) {
+                    performance.mark("send-touch-pointer-message-global", { 
+                        detail: { eventName, clientX: touch.clientX, clientY: touch.clientY, time: Date.now() }
+                    });
+                }
+                const touchEvent = new PointerEvent(eventName, {
+                    clientX: touch.clientX,
+                    clientY: touch.clientY,
+                    pointerId: touch.pointerId,
+                    view: window,
+                    cancelable: true,
+                    bubbles: true,
+                });
+                document.dispatchEvent(touchEvent);
+            }
+        }
+        else {
+            const element = zones[key];
+            for (const touch of touches) {
+                const { clientX, clientY } = decodeCoordinatesWorker(element, touch.clientX, touch.clientY);
+                const fakeTouch: FakePointerEvent = {
+                    eventName,
+                    pointerId: touch.pointerId,
+                    time: Date.now(),
                     clientX, 
                     clientY,
                 };
@@ -183,21 +283,63 @@ function dispatchClick(eventName: string, clickMap: Record<number, MouseEvent[]>
 
 function handleStart(e: TouchEvent) {
     if (debug) {
-        performance.mark("intercept-touchstart");
+        performance.mark("intercept-touchstart", {
+            detail: {
+                touches: [...e.touches].map(t => {
+                    return {
+                        identifier: t.identifier,
+                        clientX: t.clientX,
+                        clientY: t.clientY,
+                        pageX: t.pageX,
+                        pageY: t.pageY,
+                        screenX: t.screenX,
+                        screenY: t.screenY,
+                    }
+                }),
+            }
+        });
     }
     dispatchTouches("touchstart", splitTouches(e.changedTouches));
     e.preventDefault();
 }
 function handleMove(e: TouchEvent) {
     if (debug) {
-        performance.mark("intercept-touchmove");
+        performance.mark("intercept-touchmove", {
+            detail: {
+                touches: [...e.touches].map(t => {
+                    return {
+                        identifier: t.identifier,
+                        clientX: t.clientX,
+                        clientY: t.clientY,
+                        pageX: t.pageX,
+                        pageY: t.pageY,
+                        screenX: t.screenX,
+                        screenY: t.screenY,
+                    }
+                }),
+            }
+        });
     }
     dispatchTouches("touchmove", splitTouches(e.changedTouches));
     e.preventDefault();
 }
 function handleEnd(e: TouchEvent) {
     if (debug) {
-        performance.mark("intercept-touchend");
+        performance.mark("intercept-touchend", {
+            detail: {
+                touches: [...e.touches].map(t => {
+                    return {
+                        identifier: t.identifier,
+                        clientX: t.clientX,
+                        clientY: t.clientY,
+                        pageX: t.pageX,
+                        pageY: t.pageY,
+                        screenX: t.screenX,
+                        screenY: t.screenY,
+                    }
+                }),
+            }
+        });
     }
     dispatchTouches("touchend", splitTouches(e.changedTouches));
 }
@@ -206,6 +348,42 @@ function handleCancel(e: TouchEvent) {
         performance.mark("intercept-touchcancel");
     }
     dispatchTouches("touchcancel", splitTouches(e.changedTouches));
+}
+
+function handlePointerDown(e: PointerEvent) {
+    if (debug) {
+        performance.mark("intercept-pointerdown", {
+            detail: {
+                identifier: e.pointerId,
+                clientX: e.clientX,
+                clientY: e.clientY,
+                pageX: e.pageX,
+                pageY: e.pageY,
+                screenX: e.screenX,
+                screenY: e.screenY,
+            }
+        });
+    }
+    dispatchPointers("pointerdown", splitPointers(e));
+    e.preventDefault();
+}
+
+function handlePointerUp(e: PointerEvent) {
+    if (debug) {
+        performance.mark("intercept-pointerup", {
+            detail: {
+                identifier: e.pointerId,
+                clientX: e.clientX,
+                clientY: e.clientY,
+                pageX: e.pageX,
+                pageY: e.pageY,
+                screenX: e.screenX,
+                screenY: e.screenY,
+            }
+        });
+    }
+    dispatchPointers("pointerup", splitPointers(e));
+    e.preventDefault();
 }
 
 /**
@@ -266,21 +444,22 @@ function colorForTouch(touch: FakeTouch) {
 let debug = true;
 let debugDelay = 1000;
 
-function relayTouchMessage(evt: MessageEvent<FakeTouchEvent | FakeClickEvent>) {
+function relayTouchMessage(evt: MessageEvent<FakeTouchEvent | FakeClickEvent | FakePointerEvent>) {
+    const { eventName, time } = evt.data;
     if (debug) {
-        performance.mark("receive-event", { detail: evt });
+        performance.mark("receive-event", { detail: { receiveTime: Date.now(), duration: Date.now() - time, ...evt.data } });
     }
-    const { eventName } = evt.data;
+    const useClickInsteadOfTouchEnd = false;
     if (
-        eventName == "touchend" ||
         eventName == "touchstart" ||
         eventName == "touchmove" ||
-        eventName == "touchcancel"
+        eventName == "touchcancel" ||
+        (!useClickInsteadOfTouchEnd && eventName == "touchend")
     ) {
         const { touches } = evt.data;
         const dehidratedTouches = touches.map((t) => {
             const targetCandidates = document.elementsFromPoint(t.clientX, t.clientY);
-            const target = targetCandidates.filter(item => !item.classList.contains("debug-iframe-relay-point"))[0];
+            const target = targetCandidates.filter(item => !item.classList.contains("debug-iframe-relay-point"))[0] || document;
             const elementRelativeX = t.clientX;
             const elementRelativeY = t.clientY;
             if (debug) {
@@ -316,16 +495,58 @@ function relayTouchMessage(evt: MessageEvent<FakeTouchEvent | FakeClickEvent>) {
             bubbles: true,
         });
         const eventTarget = dehidratedTouches[0].target;
-        if (debug) {
-            performance.mark("dispatch-event", { detail: { eventName, touches: dehidratedTouches.map(t => { t.identifier, t.clientX, t.clientY }) } });
+        if (debug) {            
+            const touchesMarkInfo = dehidratedTouches.map(t => {
+                return { identifier: t.identifier, clientX: t.clientX, clientY: t.clientY };
+            });
+            performance.mark("dispatch-event", { detail: { eventName, time, touches: touchesMarkInfo } });
         }
         eventTarget.dispatchEvent(touchEvent);
+    }
+
+    if (useClickInsteadOfTouchEnd && eventName == "touchend") {
+        const { touches } = evt.data;
+        const dehidratedTouches = touches.map((t) => {
+            const targetCandidates = document.elementsFromPoint(t.clientX, t.clientY);
+            const target = targetCandidates.filter(item => !item.classList.contains("debug-iframe-relay-point"))[0] || document;
+            const elementRelativeX = t.clientX;
+            const elementRelativeY = t.clientY;
+            if (debug) {
+                const point = document.createElement("div");
+                point.className = "debug-iframe-relay-point point";
+                point.id = "touch-" + t.identifier;
+                point.style.left = elementRelativeX - pointSize / 2 + "px";
+                point.style.top = elementRelativeY - pointSize / 2 + "px";
+                point.style.width = "30px";
+                point.style.height = "30px";
+                point.style.position = "fixed";
+                point.style.backgroundColor = colorForTouch(t);
+                point.style.borderRadius = "50%";
+                point.style.outline =
+                    pointSize / 1.2 + "px solid red 40";
+                document.body.appendChild(point);
+                setTimeout(() => {
+                    document.body.removeChild(point);
+                }, debugDelay);
+            }
+            const touchEvent = new MouseEvent(eventName, {
+                clientX: elementRelativeX,
+                clientY: elementRelativeY,
+                view: window,
+                cancelable: true,
+                bubbles: true,
+            });
+            if (debug) {            
+                performance.mark("dispatch-event", { detail: { eventName, time, clientX: touchEvent.clientX, clientY: touchEvent.clientY } });
+            }
+            target.dispatchEvent(touchEvent);
+        });
     }
 
     if (eventName == "click") {
         const { clientX, clientY } = evt.data;
         const targetCandidates = document.elementsFromPoint(clientX, clientY);
-        const eventTarget = targetCandidates.filter(item => !item.classList.contains("debug-iframe-relay-point"))[0];
+        const eventTarget = targetCandidates.filter(item => !item.classList.contains("debug-iframe-relay-point"))[0] || document;
         const elementRelativeX = clientX;
         const elementRelativeY = clientY;
         const touchEvent = new MouseEvent(eventName, {
@@ -335,6 +556,33 @@ function relayTouchMessage(evt: MessageEvent<FakeTouchEvent | FakeClickEvent>) {
             cancelable: true,
             bubbles: true,
         });
+        if (debug) {
+            performance.mark("dispatch-event", { 
+                detail: { eventName, time, dispatchTime: Date.now(), duration: Date.now() - time, clientX: elementRelativeX, clientY: elementRelativeY }
+            });
+        }
+        eventTarget.dispatchEvent(touchEvent);
+    }
+
+    if (eventName == "pointerdown" || eventName == "pointerup") {
+        const { pointerId, clientX, clientY } = evt.data;
+        const targetCandidates = document.elementsFromPoint(clientX, clientY);
+        const eventTarget = targetCandidates.filter(item => !item.classList.contains("debug-iframe-relay-point"))[0] || document;
+        const elementRelativeX = clientX;
+        const elementRelativeY = clientY;
+        const touchEvent = new PointerEvent(eventName, {
+            clientX: elementRelativeX,
+            clientY: elementRelativeY,
+            pointerId: pointerId,
+            view: window,
+            cancelable: true,
+            bubbles: true,
+        });
+        if (debug) {
+            performance.mark("dispatch-event", { 
+                detail: { eventName, time, dispatchTime: Date.now(), duration: Date.now() - time, clientX: elementRelativeX, clientY: elementRelativeY }
+            });
+        }
         eventTarget.dispatchEvent(touchEvent);
     }
 }
@@ -366,10 +614,12 @@ export function attachRelayToPage(my_zones: HTMLIFrameElement[], options?: Parti
     box.style.height = "100%";
     box.style.zIndex = "1000";
     document.body.insertBefore(box, document.body.children[0]);
-    box.addEventListener("touchstart", handleStart, false);
-    box.addEventListener("touchend", handleEnd, false);
-    box.addEventListener("touchcancel", handleCancel, false);
-    box.addEventListener("touchmove", handleMove, false);
+    box.addEventListener("touchstart", handleStart);
+    box.addEventListener("touchend", handleEnd);
+    box.addEventListener("touchcancel", handleCancel);
+    box.addEventListener("touchmove", handleMove);
+    box.addEventListener("pointerdown", handlePointerDown);
+    box.addEventListener("pointerup", handlePointerUp);
     box.addEventListener("click", handleClick, false);
     zones = my_zones;
     overlay = box;
@@ -385,5 +635,7 @@ export function detachRelayToPage() {
     overlay.removeEventListener("touchcancel", handleCancel, false);
     overlay.removeEventListener("touchmove", handleMove, false);
     overlay.removeEventListener("click", handleClick, false);
+    overlay.removeEventListener("pointerdown", handlePointerDown, false);
+    overlay.removeEventListener("pointerup", handlePointerUp, false);
     overlay.remove();
 }
